@@ -1,0 +1,11 @@
+identifier: skb501_dk
+name: skb501_dk
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+supported:
+  - adc
+  - ble
+  - ieee802154
