@@ -18,19 +18,6 @@
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
-
-	leds {
-		compatible = "gpio-leds";
-		led0: led_0 {
-			gpios = <&gpio0 6 GPIO_INT_ACTIVE_LOW>;
-			label = "Blue LED 0";
-		};
-	};
-
-	/* These aliases are provided for compatibility with samples */
-	aliases {
-		led0 = &led0;
-	};
 };
 
 &adc {
