@@ -5,7 +5,7 @@
  */
 
 /dts-v1/;
-#include <nordic/nrf52840_qiaa.dtsi>
+#include <nordic/nrf52840.dtsi>
 
 / {
 	model = "Endian SKB501 Dev kit";
