@@ -9,6 +9,22 @@ if BOARD_SKB501_DK
 config BOARD
 	default "skb501_dk"
 
+if UART_NRFX
+
+config UART_0_NRF_TX_PIN
+	default 6
+
+config UART_0_NRF_RX_PIN
+	default 8
+
+config UART_0_NRF_RTS_PIN
+	default 5
+
+config UART_0_NRF_CTS_PIN
+	default 7
+
+endif # UART_NRFX
+
 if IEEE802154
 
 config IEEE802154_NRF5
