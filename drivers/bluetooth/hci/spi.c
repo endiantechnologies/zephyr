@@ -16,6 +16,7 @@
 #include <bluetooth/hci_driver.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
+#define LOG_MODULE_NAME bt_driver
 #include "common/log.h"
 
 #define HCI_CMD			0x01
@@ -71,7 +72,7 @@ static K_SEM_DEFINE(sem_initialised, 0, 1);
 static K_SEM_DEFINE(sem_request, 0, 1);
 static K_SEM_DEFINE(sem_busy, 1, 1);
 
-static BT_STACK_NOINIT(rx_stack, 448);
+static K_THREAD_STACK_DEFINE(rx_stack, 448);
 static struct k_thread rx_thread_data;
 
 #if defined(CONFIG_BT_DEBUG_HCI_DRIVER)
@@ -161,7 +162,7 @@ static inline u16_t bt_spi_get_evt(u8_t *rxmsg)
 }
 
 static void bt_spi_isr(struct device *unused1, struct gpio_callback *unused2,
-		       unsigned int unused3)
+		       u32_t unused3)
 {
 	BT_DBG("");
 
@@ -285,7 +286,7 @@ static void bt_spi_rx_thread(void)
 	u8_t size = 0;
 	int ret;
 
-	memset(&txmsg, 0xFF, SPI_MAX_MSG_LEN);
+	(void)memset(&txmsg, 0xFF, SPI_MAX_MSG_LEN);
 
 	while (true) {
 		k_sem_take(&sem_request, K_FOREVER);
