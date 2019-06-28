@@ -97,7 +97,7 @@ static const struct mdm_control_pinconfig pinconfig[] = {
 #define MDM_PROMPT_CMD_DELAY		K_MSEC(10)
 #endif
 
-#define MDM_MAX_DATA_LENGTH		1024
+#define MDM_MAX_DATA_LENGTH		4096
 
 #define MDM_RECV_MAX_BUF		30
 #define MDM_RECV_BUF_SIZE		128
@@ -372,6 +372,11 @@ static int send_data(struct modem_socket *sock,
 	ictx.last_error = 0;
 
 	frag = pkt->frags;
+
+	if (1024 < net_buf_frags_len(frag)) {
+		LOG_ERR("Payload size too large");
+		return -EINVAL;
+	}
 
 	/* use SOCKWRITE with binary mode formatting */
 	if (sock->ip_proto == IPPROTO_UDP) {
@@ -1058,12 +1063,13 @@ static void on_cmd_socknotifydata(struct net_buf **buf, u16_t len)
 		return;
 	}
 
-	if (left_bytes > 0) {
+	while (left_bytes > 0) {
+		int read_bytes = left_bytes <= 1024 ? left_bytes : 1024;
 		LOG_DBG("socket_id:%d left_bytes:%d", socket_id, left_bytes);
 
 		snprintk(sendbuf, sizeof(sendbuf), "AT+USOR%s=%d,%d",
 			 (sock->ip_proto == IPPROTO_UDP) ? "F" : "D",
-			 sock->socket_id, left_bytes);
+			 sock->socket_id, read_bytes);
 
 		/* We entered this trigger due to an unsolicited modem response.
 		 * When we send the AT+USOR* command it won't generate an
@@ -1074,6 +1080,8 @@ static void on_cmd_socknotifydata(struct net_buf **buf, u16_t len)
 		 * received, we trigger on_cmd_sockread() to handle it.
 		 */
 		send_at_cmd(sock, sendbuf, K_NO_WAIT);
+
+		left_bytes -= read_bytes;
 	}
 }
 
@@ -1330,7 +1338,7 @@ static int modem_pin_init(void)
 #if defined(DT_UBLOX_SARA_R4_0_MDM_VINT_GPIOS_CONTROLLER)
 	LOG_DBG("Waiting for MDM_VINT_PIN = 0");
 	u32_t vint;
-
+	
 	do {
 		k_sleep(K_MSEC(100));
 		gpio_pin_read(ictx.gpio_port_dev[MDM_VINT],
