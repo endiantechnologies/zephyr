@@ -1339,11 +1339,11 @@ static int modem_pin_init(void)
 	LOG_DBG("Waiting for MDM_VINT_PIN = 0");
 	u32_t vint;
 	
-	do {
-		k_sleep(K_MSEC(100));
-		gpio_pin_read(ictx.gpio_port_dev[MDM_VINT],
-			      pinconfig[MDM_VINT].pin, &vint);
-	} while (vint != 0);
+	// do {
+	// 	k_sleep(K_MSEC(100));
+	// 	gpio_pin_read(ictx.gpio_port_dev[MDM_VINT],
+	// 		      pinconfig[MDM_VINT].pin, &vint);
+	// } while (vint != 0);
 #else
 	k_sleep(K_SECONDS(8));
 #endif
