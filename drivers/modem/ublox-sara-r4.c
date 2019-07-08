@@ -18,6 +18,7 @@ LOG_MODULE_REGISTER(LOG_DOMAIN);
 #include <gpio.h>
 #include <device.h>
 #include <init.h>
+#include <uart.h>
 
 #include <net/net_context.h>
 #include <net/net_if.h>
@@ -97,6 +98,7 @@ static const struct mdm_control_pinconfig pinconfig[] = {
 #define MDM_PROMPT_CMD_DELAY		K_MSEC(10)
 #endif
 
+#define MDM_DEFAULT_BAUD		115200
 #define MDM_MAX_DATA_LENGTH		4096
 
 #define MDM_RECV_MAX_BUF		30
@@ -1427,6 +1429,20 @@ restart:
 
 	LOG_INF("Waiting for modem to respond");
 
+	/* set default baudrate */
+	struct uart_config uartcfg;
+
+	ret = uart_config_get(ictx.mdm_ctx.uart_dev, &uartcfg);
+	__ASSERT(ret == 0, "uart_config_get");
+
+	u32_t dts_baudrate = uartcfg.baudrate;
+
+	if (dts_baudrate != MDM_DEFAULT_BAUD) {
+		uartcfg.baudrate = MDM_DEFAULT_BAUD;
+		ret = uart_configure(ictx.mdm_ctx.uart_dev, &uartcfg);
+		__ASSERT(ret == 0, "uart_configure");
+	}
+
 	/* Give the modem a while to start responding to simple 'AT' commands.
 	 * Also wait for CSPS=1 or RRCSTATE=1 notification
 	 */
@@ -1442,6 +1458,23 @@ restart:
 	if (ret < 0) {
 		LOG_ERR("MODEM WAIT LOOP ERROR: %d", ret);
 		goto error;
+	}
+
+	/* Change the baudrate back to what was defined in the DTS */
+	if (dts_baudrate != MDM_DEFAULT_BAUD) {
+		char buf[sizeof("AT+IPR=#########\r")];
+		snprintk(buf, sizeof(buf), "AT+IPR=%u", dts_baudrate);
+
+		ret = send_at_cmd(NULL, buf, MDM_CMD_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("AT+IPR=%u ret:%d", dts_baudrate, ret);
+			goto error;
+		}
+		k_sleep(K_MSEC(100));
+
+		uartcfg.baudrate = dts_baudrate;
+		ret = uart_configure(ictx.mdm_ctx.uart_dev, &uartcfg);
+		__ASSERT(ret == 0, "uart_configure");
 	}
 
 	/* echo on */
