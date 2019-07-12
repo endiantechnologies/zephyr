@@ -62,4 +62,10 @@ config MODEM_UBLOX_SARA_R4_INIT_PRIORITY
 	  Note that the priority needs to be lower than the net stack
 	  so that it can start before the networking sub-system.
 
+config MODEM_UBLOX_SARA_R4_DISABLE_AUTO_RSSI
+	bool "disable auto RSSI query"
+	default n
+	help
+	  Disables automatic RSSI query work thread.
+
 endif # MODEM_UBLOX_SARA_R4

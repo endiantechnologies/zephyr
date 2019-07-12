@@ -1407,7 +1407,9 @@ static void modem_rssi_query_work(struct k_work *work)
 		LOG_ERR("AT+CESQ ret:%d", ret);
 	}
 #endif
-
+#if defined(CONFIG_MODEM_UBLOX_SARA_R4_DISABLE_AUTO_RSSI)
+	return;
+#endif
 	/* re-start RSSI query work */
 	k_delayed_work_submit_to_queue(&modem_workq,
 				       &ictx.rssi_query_work,
