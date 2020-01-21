@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Foundries.io
+ * Copyright (c) 2020 Endian Technologies AB
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -71,6 +72,7 @@ static struct modem_pin modem_pins[] = {
 #define MDM_CMD_TIMEOUT			K_SECONDS(10)
 #define MDM_REGISTRATION_TIMEOUT	K_SECONDS(180)
 #define MDM_PROMPT_CMD_DELAY		K_MSEC(75)
+#define MDM_DNS_TIMEOUT			K_SECONDS(120)
 
 #define MDM_MAX_DATA_LENGTH		1024
 #define MDM_RECV_MAX_BUF		30
@@ -131,6 +133,11 @@ struct modem_data {
 	/* socket data */
 	struct modem_socket_config socket_config;
 	struct modem_socket sockets[MDM_MAX_SOCKETS];
+
+	/* DNS response data */
+	struct addrinfo dns_addr;
+	struct sockaddr_storage dns_sockaddr;
+	struct k_sem sem_dns;
 
 	/* RSSI work */
 	struct k_delayed_work rssi_query_work;
@@ -610,6 +617,20 @@ MODEM_CMD_DEFINE(on_cmd_socknotifycreg)
 {
 	mdata.ev_creg = ATOI(argv[0], 0, "stat");
 	LOG_DBG("CREG:%d", mdata.ev_creg);
+}
+
+/* Handler: +UDNSRN: "<resolved_ip_address>"[0] */
+MODEM_CMD_DEFINE(on_cmd_sockdns)
+{
+	struct sockaddr_in *si_addr = (struct sockaddr_in *) &mdata.dns_sockaddr;
+	char *address = argv[0];
+	size_t addrlen = strlen(argv[0]);
+
+	if (*address != '"' || address[addrlen-1] != '"')
+		return;
+
+	address[addrlen-1] = '\0';
+	inet_pton(AF_INET, address+1, &si_addr->sin_addr);
 }
 
 /* RX thread */
@@ -1180,6 +1201,56 @@ static ssize_t offload_send(int sock_fd, const void *buf, size_t len, int flags)
 	return offload_sendto(sock_fd, buf, len, flags, NULL, 0U);
 }
 
+static int offload_getaddrinfo(const char *node, const char *service,
+	const struct addrinfo *hints,
+	struct addrinfo **res)
+{
+	int ret;
+	struct addrinfo *addr = &mdata.dns_addr;
+	struct sockaddr_in *si_addr = (struct sockaddr_in *) &mdata.dns_sockaddr;
+	struct modem_cmd cmd = MODEM_CMD("+UDNSRN: ", on_cmd_sockdns, 1U, "");
+	char buf[sizeof("AT+UDNSRN=#,") + 253];
+
+	/* The modem returns an error if there is no IPv4 address */
+	if (hints && hints->ai_family != AF_INET) {
+		return -DNS_EAI_FAMILY;
+	}
+
+	k_sem_take(&mdata.sem_dns, K_FOREVER);
+
+	/* Initialize the return structure, except for the address */
+	memset(&mdata.dns_addr, 0, sizeof mdata.dns_addr);
+	addr->ai_addrlen = sizeof(struct sockaddr_in);
+	addr->ai_addr = (struct sockaddr *) &mdata.dns_sockaddr;
+	if (hints) {
+		addr->ai_family = hints->ai_family;
+		addr->ai_socktype = hints->ai_socktype;
+		addr->ai_protocol = hints->ai_protocol;
+	}
+	si_addr->sin_family = AF_INET;
+	si_addr->sin_port = htonl(atoi(service));
+
+	/* Request DNS resolution. The handler fills in sin_addr. */
+	snprintk(buf, sizeof buf, "AT+UDNSRN=0,\"%s\"", node);
+	ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler,
+			     &cmd, 1U, buf,
+			     &mdata.sem_response, MDM_DNS_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("%s ret:%d", log_strdup(buf), ret);
+		return -DNS_EAI_SYSTEM;
+	}
+
+	*res = addr;
+
+	return 0;
+}
+
+static void offload_freeaddrinfo(struct addrinfo *res)
+{
+	k_sem_give(&mdata.sem_dns);
+}
+
+
 static const struct socket_offload modem_socket_offload = {
 	.socket = offload_socket,
 	.close = offload_close,
@@ -1190,6 +1261,8 @@ static const struct socket_offload modem_socket_offload = {
 	.recvfrom = offload_recvfrom,
 	.send = offload_send,
 	.sendto = offload_sendto,
+	.getaddrinfo = offload_getaddrinfo,
+	.freeaddrinfo = offload_freeaddrinfo,
 };
 
 static int net_offload_dummy_get(sa_family_t family,
@@ -1275,6 +1348,7 @@ static int modem_init(struct device *dev)
 	ARG_UNUSED(dev);
 
 	k_sem_init(&mdata.sem_response, 0, 1);
+	k_sem_init(&mdata.sem_dns, 1, 1);
 
 	/* initialize the work queue */
 	k_work_q_start(&modem_workq,
