@@ -860,6 +860,12 @@ restart:
 		goto error;
 	}
 
+	/* GPRS attach */
+	ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler,
+			     NULL, 0, "AT+CGATT=1",
+			     &mdata.sem_response,
+			     MDM_REGISTRATION_TIMEOUT);
+
 	LOG_INF("Waiting for network");
 
 	/*
