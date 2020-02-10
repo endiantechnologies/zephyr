@@ -27,6 +27,22 @@ config LWM2M_IPSO_TEMP_SENSOR_INSTANCE_COUNT
 	  This setting establishes the total count of IPSO Temperature
 	  Sensor instances available to the LWM2M client.
 
+config LWM2M_IPSO_VOLTAGE
+	bool "IPSO Voltage Support"
+	help
+	  This IPSO object should be used with a voltmeter sensor to
+	  report a voltage measurement. It also provides resources for
+	  minimum/maximum measured values and the minimum/maximum range
+	  that can be measured by the voltmeter sensor.
+
+config LWM2M_IPSO_VOLTAGE_INSTANCE_COUNT
+	int "Maximum # of IPSO Voltage object instances"
+	default 1
+	depends on LWM2M_IPSO_VOLTAGE
+	help
+	  This setting establishes the total count of IPSO Voltage
+	  instances available to the LWM2M client.
+
 config LWM2M_IPSO_LIGHT_CONTROL
 	bool "IPSO Light Control Support"
 	help
