@@ -232,7 +232,7 @@ int ioctl(int fd, unsigned long request, ...)
  * feature. The socket offload subsys has already defined fcntl, hence we
  * avoid redefining fcntl here.
  */
-#ifndef CONFIG_SOC_FAMILY_TISIMPLELINK
+#if !defined(CONFIG_NET_SOCKETS_OFFLOAD)
 int fcntl(int fd, int cmd, ...)
 {
 	va_list args;
