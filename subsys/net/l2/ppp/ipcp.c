@@ -46,14 +46,27 @@ static struct net_buf *ipcp_config_info_add(struct ppp_fsm *fsm)
 					       ipcp.fsm);
 
 	/* Currently we support only one option (IP address) */
-	u8_t option[IP_ADDRESS_OPTION_LEN];
+	u8_t options[IP_ADDRESS_OPTION_LEN*3];
 	const struct in_addr *my_addr;
 	struct net_buf *buf;
 	bool added;
 
 	my_addr = &ctx->ipcp.my_options.address;
 
+	u8_t *option = options;
 	option[0] = IPCP_OPTION_IP_ADDRESS;
+	option[1] = IP_ADDRESS_OPTION_LEN;
+	memcpy(&option[2], &my_addr->s_addr, sizeof(my_addr->s_addr));
+	option += IP_ADDRESS_OPTION_LEN;
+
+	my_addr = &ctx->ipcp.my_options.dns1_address;
+	option[0] = IPCP_OPTION_DNS1;
+	option[1] = IP_ADDRESS_OPTION_LEN;
+	memcpy(&option[2], &my_addr->s_addr, sizeof(my_addr->s_addr));
+
+	option += IP_ADDRESS_OPTION_LEN;
+	my_addr = &ctx->ipcp.my_options.dns2_address;
+	option[0] = IPCP_OPTION_DNS2;
 	option[1] = IP_ADDRESS_OPTION_LEN;
 	memcpy(&option[2], &my_addr->s_addr, sizeof(my_addr->s_addr));
 
@@ -62,7 +75,7 @@ static struct net_buf *ipcp_config_info_add(struct ppp_fsm *fsm)
 		goto out_of_mem;
 	}
 
-	added = append_to_buf(buf, option, sizeof(option));
+	added = append_to_buf(buf, options, sizeof(options));
 	if (!added) {
 		goto out_of_mem;
 	}
@@ -184,7 +197,10 @@ static int ipcp_config_info_req(struct ppp_fsm *fsm,
 
 		if (address_option_idx < 0) {
 			/* Address option was not present */
-			return -EINVAL;
+			NET_WARN("(peer) address option not present");
+			char addr_[] = {10,0,0,1};
+			memcpy(&ctx->ipcp.peer_options.address, &addr_, sizeof(addr_));
+			return PPP_CONFIGURE_ACK;
 		}
 
 		code = PPP_CONFIGURE_ACK;
@@ -299,6 +315,33 @@ static int ipcp_config_info_nack(struct ppp_fsm *fsm,
 			continue;
 
 		case IPCP_OPTION_IP_COMP_PROTO:
+			continue;
+
+		case IPCP_OPTION_DNS1:
+		case IPCP_OPTION_DNS2:
+			net_pkt_cursor_restore(pkt, &nack_options[i].value);
+
+			ret = net_pkt_read(pkt, (u32_t *)&addr, sizeof(addr));
+			if (ret < 0) {
+				/* Should not happen, is the pkt corrupt? */
+				NET_WARN("ret < 0");
+				return -EMSGSIZE;
+			}
+			if (nack_options[i].type.ipcp == IPCP_OPTION_DNS1)
+				memcpy(&ctx->ipcp.my_options.dns1_address, &addr, sizeof(addr));
+			else
+				memcpy(&ctx->ipcp.my_options.dns2_address, &addr, sizeof(addr));
+
+			if (CONFIG_NET_L2_PPP_LOG_LEVEL >= LOG_LEVEL_DBG) {
+				char dst[INET_ADDRSTRLEN];
+				char *addr_str;
+
+				addr_str = net_addr_ntop(AF_INET, &addr, dst,
+							 sizeof(dst));
+
+				NET_DBG("[%s/%p] Received %saddress DNS %s",
+					fsm->name, fsm, "", log_strdup(addr_str));
+			}
 			continue;
 
 		case IPCP_OPTION_IP_ADDRESS:

@@ -317,6 +317,10 @@ const char *ppp_option2str(enum ppp_protocol_type protocol,
 			return "IP_COMPRESSION_PROTOCOL";
 		case IPCP_OPTION_IP_ADDRESS:
 			return "IP_ADDRESS";
+		case IPCP_OPTION_DNS1:
+			return "DNS1";
+		case IPCP_OPTION_DNS2:
+			return "DNS2";
 		}
 
 		break;
