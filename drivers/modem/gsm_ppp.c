@@ -211,6 +211,8 @@ static struct setup_cmd setup_cmds[] = {
 	SETUP_CMD_NOHANDLE("AT+CREG=0"),
 	/* create PDP context */
 	SETUP_CMD_NOHANDLE("AT+CGDCONT=1,\"IP\",\"" CONFIG_MODEM_GSM_APN "\""),
+	/* detach the GPRS context for a faster PPP setup */
+	SETUP_CMD_NOHANDLE("AT+CGATT=0"),
 	/* connect to network */
 	SETUP_CMD_NOHANDLE("ATD*99#")
 };
