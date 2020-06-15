@@ -697,6 +697,56 @@ static int ssd16xx_init(struct device *dev)
 	return ssd16xx_controller_init(dev);
 }
 
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+
+static void ssd16xx_set_power_state(struct device *dev, u32_t new_state)
+{
+	int err;
+	u8_t tmp[1];
+	struct ssd16xx_data *driver = dev->driver_data;
+
+	if (new_state == DEVICE_PM_ACTIVE_STATE) {
+		ssd16xx_controller_init(dev);
+	} else {
+		assert(new_state == DEVICE_PM_LOW_POWER_STATE ||
+		       new_state == DEVICE_PM_SUSPEND_STATE ||
+		       new_state == DEVICE_PM_OFF_STATE);
+
+		ssd16xx_busy_wait(driver);
+		tmp[0] = SSD16XX_SLEEP_MODE_DSM;
+		err = ssd16xx_write_cmd(driver, SSD16XX_CMD_SLEEP_MODE, tmp, 1);
+		if (err < 0) {
+			LOG_ERR("Could not set deep sleep mode");
+			return;
+		}
+	}
+}
+
+static int ssd16xx_pm_control(struct device *dev, u32_t ctrl_command,
+				void *context, device_pm_cb cb, void *arg)
+{
+	static u32_t current_state = DEVICE_PM_ACTIVE_STATE;
+
+	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
+		u32_t new_state = *((const u32_t *)context);
+
+		if (new_state != current_state) {
+			ssd16xx_set_power_state(dev, new_state);
+			current_state = new_state;
+		}
+	} else {
+		assert(ctrl_command == DEVICE_PM_GET_POWER_STATE);
+		*((u32_t *)context) = current_state;
+	}
+
+	if (cb) {
+		cb(dev, 0, context, arg);
+	}
+
+	return 0;
+}
+#endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
+
 static struct ssd16xx_data ssd16xx_driver;
 
 static struct display_driver_api ssd16xx_driver_api = {
@@ -713,7 +763,12 @@ static struct display_driver_api ssd16xx_driver_api = {
 };
 
 
-DEVICE_AND_API_INIT(ssd16xx, DT_INST_0_SOLOMON_SSD16XXFB_LABEL, ssd16xx_init,
-		    &ssd16xx_driver, NULL,
-		    POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY,
-		    &ssd16xx_driver_api);
+DEVICE_DEFINE(ssd16xx,
+	      DT_INST_0_SOLOMON_SSD16XXFB_LABEL,
+	      ssd16xx_init,
+	      ssd16xx_pm_control,
+	      &ssd16xx_driver,
+	      NULL,
+	      POST_KERNEL,
+	      CONFIG_APPLICATION_INIT_PRIORITY,
+	      &ssd16xx_driver_api);
