@@ -37,4 +37,30 @@ config MODEM_GSM_MANUAL_MCCMNO
 	  the network provider and may need to be changed if auto is not
 	  selected.
 
+config MODEM_GSM_MNOPROF
+	int "MNO profile for the network connection"
+	default 100
+	help
+	  This setting is used in the AT+UMNOPROF command to set the MNO
+	  profile for the network connection.  This value is specific to
+	  the network provider and must be changed.
+
+config MODEM_GSM_NET_STATUS
+	bool "Enable support for network status indication"
+	help
+	  Choose this setting to use a modem GPIO pin as network indication.
+
+if MODEM_GSM_NET_STATUS
+
+config MODEM_GSM_NET_STATUS_PIN
+	int "Network status indication GPIO ID"
+	default 16
+	help
+	  This setting is used to configure one of the modem's GPIO pins
+	  as a network status indication.  See the manual for the gpio ids
+	  and how they map to pin numbers. Only works with U-blox modems.
+	  This is not meant to be upstreamed!
+
+endif # MODEM_GSM_NET_STATUS
+
 endif

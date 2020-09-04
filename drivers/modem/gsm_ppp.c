@@ -132,6 +132,10 @@ struct modem_info {
 	char mdm_imsi[MDM_IMSI_LENGTH];
 	char mdm_iccid[MDM_ICCID_LENGTH];
 #endif
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+	int mdm_mnoprof;
+	int mdm_psm;
+#endif
 };
 
 static struct modem_info minfo;
@@ -237,6 +241,53 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_iccid)
 #endif /* CONFIG_MODEM_SIM_IDS */
 #endif /* CONFIG_MODEM_SHELL */
 
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+/* Handler: +UMNOPROF: <mnoprof> */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_mnoprof)
+{
+	size_t out_len;
+	char buf[16];
+	char *prof;
+
+	out_len = net_buf_linearize(buf,
+				    sizeof(buf) - 1,
+				    data->rx_buf, 0, len);
+	buf[out_len] = '\0';
+	prof = strchr(buf, ':');
+	if (!prof || *(prof+1) != ' ') {
+		minfo.mdm_mnoprof = -1;
+		return -1;
+	}
+	prof = prof + 2;
+	minfo.mdm_mnoprof = atoi(prof);
+	LOG_INF("MNO profile: %d", minfo.mdm_mnoprof);
+
+	return 0;
+}
+
+/* Handler: +CPSMS: <mode>,[...] */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_psm)
+{
+	size_t out_len;
+	char buf[16];
+	char *psm;
+
+	out_len = net_buf_linearize(buf,
+				    sizeof(buf) - 1,
+				    data->rx_buf, 0, len);
+	buf[out_len] = '\0';
+
+	psm = strchr(buf, ':');
+	if (!psm) {
+		return -1;
+	}
+	minfo.mdm_psm = *(psm+1) - '0';
+	LOG_INF("PSM mode: %d", minfo.mdm_psm);
+
+	return 0;
+}
+#endif
+
 static struct setup_cmd setup_cmds[] = {
 	/* no echo */
 	SETUP_CMD_NOHANDLE("ATE0"),
@@ -255,6 +306,12 @@ static struct setup_cmd setup_cmds[] = {
 	SETUP_CMD("AT+CCID", "", on_cmd_atcmdinfo_iccid, 0U, ""),
 # endif
 	SETUP_CMD("AT+CGSN", "", on_cmd_atcmdinfo_imei, 0U, ""),
+#endif
+#if defined(CONFIG_MODEM_GSM_NET_STATUS_PIN)
+	/* enable the network status indication */
+	SETUP_CMD_NOHANDLE("AT+UGPIOC="
+			   STRINGIFY(CONFIG_MODEM_GSM_NET_STATUS_PIN)
+			   ",2"),
 #endif
 
 	/* disable unsolicited network registration codes */
@@ -295,6 +352,119 @@ static int gsm_setup_mccmno(struct gsm_modem *gsm)
 	return ret;
 }
 
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+static int gsm_setup_mnoprof(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd cmds[] = {
+		SETUP_CMD_NOHANDLE("ATE0"),
+		SETUP_CMD("AT+UMNOPROF?", "", on_cmd_atcmdinfo_mnoprof, 0U, ""),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   cmds,
+					   ARRAY_SIZE(cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("AT+UMNOPROF ret:%d", ret);
+		return ret;
+	}
+
+	if (minfo.mdm_mnoprof != -1 && minfo.mdm_mnoprof != CONFIG_MODEM_GSM_MNOPROF) {
+		/* The wrong MNO profile was set, change it */
+		LOG_WRN("Changing MNO profile from %d to %d",
+			minfo.mdm_mnoprof, CONFIG_MODEM_GSM_MNOPROF);
+
+		/* Detach from the network */
+		ret = modem_cmd_send(&gsm->context.iface,
+				     &gsm->context.cmd_handler,
+				     NULL, 0,
+				     "AT+CFUN=0",
+				     &gsm->sem_response,
+				     GSM_CMD_AT_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("AT+CFUN=0 ret:%d", ret);
+		}
+
+		/* Set the profile */
+		ret = modem_cmd_send(&gsm->context.iface,
+				     &gsm->context.cmd_handler,
+				     NULL, 0,
+				     "AT+UMNOPROF=" STRINGIFY(CONFIG_MODEM_GSM_MNOPROF),
+				     &gsm->sem_response,
+				     GSM_CMD_AT_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("AT+UMNOPROF ret:%d", ret);
+		}
+
+		/* Reboot */
+		ret = modem_cmd_send(&gsm->context.iface,
+				     &gsm->context.cmd_handler,
+				     NULL, 0,
+				     "AT+CFUN=15",
+				     &gsm->sem_response,
+				     GSM_CMD_AT_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("AT+CFUN=15 ret:%d", ret);
+		}
+		k_sleep(K_SECONDS(3));
+
+		return -EAGAIN;
+	}
+
+	return ret;
+}
+
+static int gsm_setup_psm(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD_NOHANDLE("ATE0"),
+		SETUP_CMD("AT+CPSMS?", "", on_cmd_atcmdinfo_psm, 0U, ""),
+	};
+	struct setup_cmd set_cmds[] = {
+		SETUP_CMD_NOHANDLE("ATE0"),
+		SETUP_CMD_NOHANDLE("AT+CFUN=0"),
+		SETUP_CMD_NOHANDLE("AT+CPSMS=0"),
+		SETUP_CMD_NOHANDLE("AT+CFUN=15"),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying PSM ret:%d", ret);
+		return ret;
+	}
+
+	if (minfo.mdm_psm != -1 && minfo.mdm_psm != 0) {
+		LOG_WRN("Disabling PSM");
+		ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+						   &gsm->context.cmd_handler,
+						   set_cmds,
+						   ARRAY_SIZE(set_cmds),
+						   &gsm->sem_response,
+						   GSM_CMD_SETUP_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("Querying PSM ret:%d", ret);
+			return ret;
+		}
+
+		k_sleep(K_SECONDS(3));
+
+		return -EAGAIN;
+	}
+
+	return ret;
+}
+#endif
+
+
 static void gsm_configure(struct k_work *work)
 {
 	int r = -1;
@@ -319,6 +489,17 @@ static void gsm_configure(struct k_work *work)
 				break;
 			}
 		}
+
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+		r = gsm_setup_mnoprof(gsm);
+		if (r < 0) {
+			continue;
+		}
+		r = gsm_setup_psm(gsm);
+		if (r < 0) {
+			continue;
+		}
+#endif
 
 		r = modem_cmd_handler_setup_cmds(&gsm->context.iface,
 						 &gsm->context.cmd_handler,
@@ -379,6 +560,10 @@ static int gsm_init(struct device *device)
 	gsm->context.data_iccid = minfo.mdm_iccid;
 #endif	/* CONFIG_MODEM_SIM_NUMBERS */
 #endif	/* CONFIG_MODEM_SHELL */
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+	minfo.mdm_mnoprof = -1;
+	minfo.mdm_psm = -1;
+#endif
 
 	gsm->gsm_data.isr_buf = &gsm->gsm_isr_buf[0];
 	gsm->gsm_data.isr_buf_len = sizeof(gsm->gsm_isr_buf);
