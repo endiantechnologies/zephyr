@@ -282,7 +282,8 @@ static int ssd16xx_write(const struct device *dev, const u16_t x,
 		break;
 
 	case SSD16XX_DATA_ENTRY_XDYIY:
-		x_start = (panel_h - 1 - y) / SSD16XX_PIXELS_PER_BYTE;
+		x_start = (panel_h - 1 - y + (SSD16XX_PIXELS_PER_BYTE - 1)) /
+			SSD16XX_PIXELS_PER_BYTE;
 		x_end = (panel_h - 1 - (y + desc->height - 1)) /
 			SSD16XX_PIXELS_PER_BYTE;
 		y_start = x;
