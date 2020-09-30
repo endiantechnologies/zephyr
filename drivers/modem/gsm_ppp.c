@@ -122,6 +122,7 @@ static struct modem_cmd response_cmds[] = {
 #define MDM_IMEI_LENGTH          16
 #define MDM_IMSI_LENGTH          16
 #define MDM_ICCID_LENGTH         32
+#define MDM_URAT_LENGTH          16
 
 struct modem_info {
 	char mdm_manufacturer[MDM_MANUFACTURER_LENGTH];
@@ -135,6 +136,9 @@ struct modem_info {
 #if defined(CONFIG_MODEM_GSM_MNOPROF)
 	int mdm_mnoprof;
 	int mdm_psm;
+#endif
+#if defined(CONFIG_MODEM_GSM_URAT)
+	char mdm_urat[MDM_URAT_LENGTH];
 #endif
 };
 
@@ -283,6 +287,30 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_psm)
 	}
 	minfo.mdm_psm = *(psm+1) - '0';
 	LOG_INF("PSM mode: %d", minfo.mdm_psm);
+
+	return 0;
+}
+#endif
+
+#if defined(CONFIG_MODEM_GSM_URAT)
+/* Handler: +URAT: <rat1>,[...] */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_urat)
+{
+	size_t out_len;
+
+	out_len = net_buf_linearize(minfo.mdm_urat,
+				    sizeof(minfo.mdm_urat) - 1,
+				    data->rx_buf, 0, len);
+	minfo.mdm_urat[out_len] = '\0';
+
+	/* Get rid of "+URAT: " */
+	char *p = strchr(minfo.mdm_urat, ' ');
+	if (p) {
+		size_t len = strlen(p+1);
+		memmove(minfo.mdm_urat, p+1, len+1);
+	}
+
+	LOG_INF("URAT: %s", log_strdup(minfo.mdm_urat));
 
 	return 0;
 }
@@ -464,6 +492,52 @@ static int gsm_setup_psm(struct gsm_modem *gsm)
 }
 #endif
 
+#if defined(CONFIG_MODEM_GSM_URAT)
+static int gsm_setup_urat(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD("AT+URAT?", "", on_cmd_atcmdinfo_urat, 0U, ""),
+	};
+	struct setup_cmd set_cmds[] = {
+		SETUP_CMD_NOHANDLE("ATE0"),
+		SETUP_CMD_NOHANDLE("AT+CFUN=0"),
+		SETUP_CMD_NOHANDLE("AT+URAT=" CONFIG_MODEM_GSM_URAT),
+		SETUP_CMD_NOHANDLE("AT+CFUN=15"),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying URAT ret:%d", ret);
+		return ret;
+	}
+
+	if (strcmp(minfo.mdm_urat, CONFIG_MODEM_GSM_URAT)) {
+		LOG_WRN("Setting URAT");
+		ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+						   &gsm->context.cmd_handler,
+						   set_cmds,
+						   ARRAY_SIZE(set_cmds),
+						   &gsm->sem_response,
+						   GSM_CMD_SETUP_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("Setting URAT ret:%d", ret);
+			return ret;
+		}
+
+		k_sleep(K_SECONDS(3));
+
+		return -EAGAIN;
+	}
+
+	return ret;
+}
+#endif
 
 static void gsm_configure(struct k_work *work)
 {
@@ -496,6 +570,13 @@ static void gsm_configure(struct k_work *work)
 			continue;
 		}
 		r = gsm_setup_psm(gsm);
+		if (r < 0) {
+			continue;
+		}
+#endif
+
+#if defined(CONFIG_MODEM_GSM_URAT)
+		r = gsm_setup_urat(gsm);
 		if (r < 0) {
 			continue;
 		}

@@ -63,4 +63,22 @@ config MODEM_GSM_NET_STATUS_PIN
 
 endif # MODEM_GSM_NET_STATUS
 
+config MODEM_GSM_CONFIGURE_URAT
+	bool "Enable support for selecting RATs"
+	help
+	  Choose this setting to select the Radio Access Technologies used.
+
+if MODEM_GSM_CONFIGURE_URAT
+
+config MODEM_GSM_URAT
+	string "Radio Access Technologies (RATs)"
+	default "7,8,9"
+	help
+	  This setting is used to change the RATs that the modem will use
+	  to connect to the network
+	  This is not meant to be upstreamed as-is!
+
+endif # MODEM_GSM_CONFIGURE_URAT
+
+
 endif
