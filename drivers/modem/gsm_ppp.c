@@ -140,6 +140,8 @@ struct modem_info {
 #if defined(CONFIG_MODEM_GSM_URAT)
 	char mdm_urat[MDM_URAT_LENGTH];
 #endif
+	int mdm_rssi;
+	int mdm_service;
 };
 
 static struct modem_info minfo;
@@ -316,6 +318,67 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_urat)
 }
 #endif
 
+/* Handler: +CIND: <battchg>,<signal>,<service>,<sounder>,
+ *          <message>,<call>,<roam>,<smsfull>,<gprs>,
+ *          <callsetup>,<callheld>,<simind>
+ */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_cind)
+{
+	char buf[40];
+	size_t out_len;
+
+	out_len = net_buf_linearize(buf, sizeof(buf) - 1,
+				    data->rx_buf, 0, len);
+	buf[out_len] = '\0';
+
+	char *p = buf;
+	int i = 0;
+	while (p) {
+		int v = atoi(p);
+
+		switch (i) {
+		case 1:
+			switch (v) {
+			default:
+			case 0:
+				minfo.mdm_rssi = -106;
+				break;
+			case 1:
+				minfo.mdm_rssi = -92;
+				break;
+			case 2:
+				minfo.mdm_rssi = -82;
+				break;
+			case 3:
+				minfo.mdm_rssi = -70;
+				break;
+			case 4:
+				minfo.mdm_rssi = -58;
+				break;
+			case 5:
+				minfo.mdm_rssi = -57;
+				break;
+			}
+			if (v == 5) {
+				LOG_INF("RSSI: >=%d dBm", minfo.mdm_rssi);
+			} else {
+				LOG_INF("RSSI: <%d dBm", minfo.mdm_rssi+1);
+			}
+			break;
+		case 2:
+			LOG_INF("Network service: %d", v);
+			minfo.mdm_service = v;
+			break;
+		}
+
+		p = strchr(p, ',');
+		if (p) p++;
+		i++;
+	}
+
+	return 0;
+}
+
 static struct setup_cmd setup_cmds[] = {
 	/* no echo */
 	SETUP_CMD_NOHANDLE("ATE0"),
@@ -344,6 +407,9 @@ static struct setup_cmd setup_cmds[] = {
 
 	/* disable unsolicited network registration codes */
 	SETUP_CMD_NOHANDLE("AT+CREG=0"),
+};
+
+static struct setup_cmd setup_ppp_cmds[] = {
 	/* create PDP context */
 	SETUP_CMD_NOHANDLE("AT+CGDCONT=1,\"IP\",\"" CONFIG_MODEM_GSM_APN "\""),
 	/* connect to network */
@@ -539,6 +605,40 @@ static int gsm_setup_urat(struct gsm_modem *gsm)
 }
 #endif
 
+/* Poll the network status. Should return non-negative to indicate
+ * that the network is ready to use.
+ */
+static int gsm_poll_network_status(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD("AT+CIND?", "", on_cmd_atcmdinfo_cind, 0U, ""),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying CIND: %d", ret);
+		return ret;
+	}
+
+	gsm->context.data_rssi = minfo.mdm_rssi;
+
+	if (minfo.mdm_service == 1 &&
+	    gsm->context.data_rssi <= -106 &&
+	    k_uptime_get() < K_SECONDS(30)) {
+		/* Not enough time to get a good RSSI; try again */
+		LOG_WRN("Waiting for a good RSSI value");
+		return -1;
+	}
+
+	return minfo.mdm_service == 1 ? 0 : -1;
+}
+
 static void gsm_configure(struct k_work *work)
 {
 	int r = -1;
@@ -582,10 +682,33 @@ static void gsm_configure(struct k_work *work)
 		}
 #endif
 
+		/* Prepare the network connection */
 		r = modem_cmd_handler_setup_cmds(&gsm->context.iface,
 						 &gsm->context.cmd_handler,
 						 setup_cmds,
 						 ARRAY_SIZE(setup_cmds),
+						 &gsm->sem_response,
+						 GSM_CMD_SETUP_TIMEOUT);
+		if (r < 0) {
+			continue;
+		}
+
+		/* Wait for a registration */
+		while (true) {
+			r = gsm_poll_network_status(gsm);
+			if (r < 0) {
+				LOG_DBG("network not ready");
+				k_sleep(K_MSEC(500));
+			} else {
+				break;
+			}
+		}
+
+		/* Start the data connection */
+		r = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+						 &gsm->context.cmd_handler,
+						 setup_ppp_cmds,
+						 ARRAY_SIZE(setup_ppp_cmds),
 						 &gsm->sem_response,
 						 GSM_CMD_SETUP_TIMEOUT);
 		if (r < 0) {
@@ -645,6 +768,7 @@ static int gsm_init(struct device *device)
 	minfo.mdm_mnoprof = -1;
 	minfo.mdm_psm = -1;
 #endif
+	minfo.mdm_rssi = -1000;
 
 	gsm->gsm_data.isr_buf = &gsm->gsm_isr_buf[0];
 	gsm->gsm_data.isr_buf_len = sizeof(gsm->gsm_isr_buf);
