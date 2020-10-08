@@ -123,6 +123,7 @@ static struct modem_cmd response_cmds[] = {
 #define MDM_IMSI_LENGTH          16
 #define MDM_ICCID_LENGTH         32
 #define MDM_URAT_LENGTH          16
+#define MDM_UBANDMASKS           2
 
 struct modem_info {
 	char mdm_manufacturer[MDM_MANUFACTURER_LENGTH];
@@ -139,6 +140,9 @@ struct modem_info {
 #endif
 #if defined(CONFIG_MODEM_GSM_URAT)
 	char mdm_urat[MDM_URAT_LENGTH];
+#endif
+#if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
+	uint64_t mdm_bandmask[MDM_UBANDMASKS];
 #endif
 	int mdm_rssi;
 	int mdm_service;
@@ -313,6 +317,43 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_urat)
 	}
 
 	LOG_INF("URAT: %s", log_strdup(minfo.mdm_urat));
+
+	return 0;
+}
+#endif
+
+#if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
+/* Handler: +UBANDMASK: <rat0>,<mask>,[...] */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_ubandmask)
+{
+	char buf[40];
+	size_t out_len;
+
+	out_len = net_buf_linearize(buf, sizeof(buf) - 1,
+				    data->rx_buf, 0, len);
+	buf[out_len] = '\0';
+	char *p = buf;
+
+	/* Skip over "+UBANDMASK: " */
+	if (strchr(buf, ' ')) {
+		p = strchr(buf, ' ');
+	}
+	int i = 0;
+	int rat = -1;
+	while (p) {
+		int v = atoi(p);
+
+		if (i % 2 == 0) {
+			rat = v;
+		} else if (rat >= 0 && rat < MDM_UBANDMASKS) {
+			minfo.mdm_bandmask[rat] = v;
+			LOG_INF("UBANDMASK for RAT %d: 0x%x", rat, v);
+		}
+
+		p = strchr(p, ',');
+		if (p) p++;
+		i++;
+	}
 
 	return 0;
 }
@@ -605,6 +646,57 @@ static int gsm_setup_urat(struct gsm_modem *gsm)
 }
 #endif
 
+#if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
+static int gsm_setup_ubandmask(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD("AT+UBANDMASK?", "", on_cmd_atcmdinfo_ubandmask, 0U, ""),
+	};
+	struct setup_cmd set_cmds[] = {
+		SETUP_CMD_NOHANDLE("ATE0"),
+		SETUP_CMD_NOHANDLE("AT+CFUN=0"),
+		SETUP_CMD_NOHANDLE("AT+UBANDMASK=0,"
+				   STRINGIFY(CONFIG_MODEM_GSM_UBANDMASK_M1)),
+		SETUP_CMD_NOHANDLE("AT+UBANDMASK=1,"
+				   STRINGIFY(CONFIG_MODEM_GSM_UBANDMASK_NB1)),
+		SETUP_CMD_NOHANDLE("AT+CFUN=15"),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying UBANDMASK ret:%d", ret);
+		return ret;
+	}
+
+	if (minfo.mdm_bandmask[0] != CONFIG_MODEM_GSM_UBANDMASK_M1 ||
+	    minfo.mdm_bandmask[1] != CONFIG_MODEM_GSM_UBANDMASK_NB1) {
+		LOG_WRN("Setting UBANDMASK");
+		ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+						   &gsm->context.cmd_handler,
+						   set_cmds,
+						   ARRAY_SIZE(set_cmds),
+						   &gsm->sem_response,
+						   GSM_CMD_SETUP_TIMEOUT);
+		k_sleep(K_SECONDS(3));
+		if (ret < 0) {
+			LOG_ERR("Setting URAT ret:%d", ret);
+			return ret;
+		}
+
+
+		return -EAGAIN;
+	}
+
+	return ret;
+}
+#endif
+
 /* Poll the network status. Should return non-negative to indicate
  * that the network is ready to use.
  */
@@ -677,6 +769,13 @@ static void gsm_configure(struct k_work *work)
 
 #if defined(CONFIG_MODEM_GSM_URAT)
 		r = gsm_setup_urat(gsm);
+		if (r < 0) {
+			continue;
+		}
+#endif
+
+#if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
+		r = gsm_setup_ubandmask(gsm);
 		if (r < 0) {
 			continue;
 		}
