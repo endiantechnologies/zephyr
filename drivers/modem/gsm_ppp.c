@@ -118,6 +118,8 @@ static const struct modem_cmd response_cmds[] = {
 #define MDM_IMEI_LENGTH          16
 #define MDM_IMSI_LENGTH          16
 #define MDM_ICCID_LENGTH         32
+#define MDM_URAT_LENGTH          16
+#define MDM_UBANDMASKS           2
 
 struct modem_info {
 	char mdm_manufacturer[MDM_MANUFACTURER_LENGTH];
@@ -128,6 +130,18 @@ struct modem_info {
 	char mdm_imsi[MDM_IMSI_LENGTH];
 	char mdm_iccid[MDM_ICCID_LENGTH];
 #endif
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+	int mdm_mnoprof;
+	int mdm_psm;
+#endif
+#if defined(CONFIG_MODEM_GSM_URAT)
+	char mdm_urat[MDM_URAT_LENGTH];
+#endif
+#if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
+	uint64_t mdm_bandmask[MDM_UBANDMASKS];
+#endif
+	int mdm_rssi;
+	int mdm_service;
 };
 
 static struct modem_info minfo;
@@ -256,6 +270,13 @@ static const struct setup_cmd setup_cmds[] = {
 	/* disable unsolicited network registration codes */
 	SETUP_CMD_NOHANDLE("AT+CREG=0"),
 
+#if defined(CONFIG_MODEM_GSM_NET_STATUS_PIN)
+       /* enable the network status indication */
+       SETUP_CMD_NOHANDLE("AT+UGPIOC="
+                          STRINGIFY(CONFIG_MODEM_GSM_NET_STATUS_PIN)
+                          ",2"),
+#endif
+
 	/* create PDP context */
 	SETUP_CMD_NOHANDLE("AT+CGDCONT=1,\"IP\",\"" CONFIG_MODEM_GSM_APN "\""),
 };
@@ -313,6 +334,8 @@ static int gsm_setup_mccmno(struct gsm_modem *gsm)
 
 	return ret;
 }
+
+#include "gsm_ppp_endian.c"
 
 static struct net_if *ppp_net_if(void)
 {
@@ -383,6 +406,36 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 					    GSM_CMD_AT_TIMEOUT);
 		k_sleep(K_SECONDS(1));
 	}
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+	ret = gsm_setup_mnoprof(gsm);
+	if (ret < 0) {
+		(void)k_work_reschedule(&gsm->gsm_configure_work,
+					    K_SECONDS(1));
+		return;
+	}
+	ret = gsm_setup_psm(gsm);
+	if (ret < 0) {
+		(void)k_work_reschedule(&gsm->gsm_configure_work,
+					    K_SECONDS(1));
+		return;
+	}
+#endif
+#if defined(CONFIG_MODEM_GSM_URAT)
+	ret = gsm_setup_urat(gsm);
+	if (ret < 0) {
+		(void)k_work_reschedule(&gsm->gsm_configure_work,
+					    K_SECONDS(1));
+		return;
+	}
+#endif
+#if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
+	ret = gsm_setup_ubandmask(gsm);
+	if (ret < 0) {
+		(void)k_work_reschedule(&gsm->gsm_configure_work,
+					    K_SECONDS(1));
+		return;
+	}
+#endif
 
 	(void)gsm_setup_mccmno(gsm);
 
@@ -400,6 +453,17 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 	}
 
 attaching:
+	/* Poll the RSSI (and wait for network registration, a bit
+	 * redundantly, but this is a hack)
+	 */
+	ret = gsm_poll_network_status(gsm);
+	if (ret < 0) {
+		LOG_DBG("network not ready");
+		(void)k_work_reschedule(&gsm->gsm_configure_work,
+					    K_SECONDS(1));
+		return;
+	}
+
 	/* Don't initialize PPP until we're attached to packet service */
 	ret = modem_cmd_send_nolock(&gsm->context.iface,
 				    &gsm->context.cmd_handler,
@@ -427,9 +491,12 @@ attaching:
 		return;
 	}
 
+<<<<<<< HEAD
 	/* Attached, clear retry counter */
 	gsm->attach_retries = 0;
 
+=======
+>>>>>>> 554e63f730 (drivers: modem: gsm: Various hacks for SARA U-blox modems)
 	LOG_DBG("modem setup returned %d, %s", ret, "enable PPP");
 
 	ret = modem_cmd_handler_setup_cmds_nolock(&gsm->context.iface,
@@ -783,6 +850,11 @@ static int gsm_init(const struct device *dev)
 	gsm->context.data_iccid = minfo.mdm_iccid;
 #endif	/* CONFIG_MODEM_SIM_NUMBERS */
 #endif	/* CONFIG_MODEM_SHELL */
+#if defined(CONFIG_MODEM_GSM_MNOPROF)
+	minfo.mdm_mnoprof = -1;
+	minfo.mdm_psm = -1;
+#endif
+	minfo.mdm_rssi = -1000;
 
 	gsm->gsm_data.rx_rb_buf = &gsm->gsm_rx_rb_buf[0];
 	gsm->gsm_data.rx_rb_buf_len = sizeof(gsm->gsm_rx_rb_buf);

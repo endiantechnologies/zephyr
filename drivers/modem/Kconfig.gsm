@@ -85,5 +85,7 @@ config MODEM_GSM_FACTORY_RESET_AT_BOOT
 	  settings first thing in the initialization sequence. This is
 	  helpful if your modem has a tendency to get stuck due to cached
 	  state.
+	  
+source "drivers/modem/Kconfig.gsm_endian"
 
 endif
