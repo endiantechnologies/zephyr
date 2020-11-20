@@ -61,4 +61,6 @@ config MODEM_GSM_MANUAL_MCCMNO
 	  the network provider and may need to be changed if auto is not
 	  selected.
 
+source "drivers/modem/Kconfig.gsm_endian"
+
 endif
