@@ -69,6 +69,9 @@ struct ssd16xx_data {
 #endif
 	uint8_t scan_mode;
 	uint8_t update_cmd;
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+	uint32_t pm_state;
+#endif
 };
 
 #if DT_INST_NODE_HAS_PROP(0, lut_initial)
@@ -701,6 +704,45 @@ static int ssd16xx_init(const struct device *dev)
 	return ssd16xx_controller_init(dev);
 }
 
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+static int ssd16xx_pm_control(const struct device *dev, uint32_t ctrl_command,
+				 void *context, device_pm_cb cb, void *arg)
+{
+	int ret = 0;
+	struct ssd16xx_data *data = (struct ssd16xx_data *)dev->data;
+
+	switch (ctrl_command) {
+	case DEVICE_PM_SET_POWER_STATE:
+		if (*((uint32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
+			ssd16xx_controller_init(dev);
+			data->pm_state = DEVICE_PM_ACTIVE_STATE;
+			ret = 0;
+		} else {
+			ssd16xx_busy_wait(data);
+			uint8_t tmp = SSD16XX_SLEEP_MODE_DSM;
+			int err = ssd16xx_write_cmd(data, SSD16XX_CMD_SLEEP_MODE, &tmp, 1);
+			if (err < 0) {
+				LOG_ERR("Could not set deep sleep mode");
+			}
+			data->pm_state = DEVICE_PM_LOW_POWER_STATE;
+			ret = 0;
+		}
+		break;
+	case DEVICE_PM_GET_POWER_STATE:
+		*((uint32_t *)context) = data->pm_state;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	if (cb != NULL) {
+		cb(dev, ret, context, arg);
+	}
+	return ret;
+}
+
+#endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
+
 static struct ssd16xx_data ssd16xx_driver;
 
 static struct display_driver_api ssd16xx_driver_api = {
@@ -716,8 +758,12 @@ static struct display_driver_api ssd16xx_driver_api = {
 	.set_orientation = ssd16xx_set_orientation,
 };
 
-
-DEVICE_AND_API_INIT(ssd16xx, DT_INST_LABEL(0), ssd16xx_init,
-		    &ssd16xx_driver, NULL,
-		    POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY,
-		    &ssd16xx_driver_api);
+DEVICE_DEFINE(ssd16xx,
+	      DT_INST_LABEL(0),
+	      ssd16xx_init,
+	      ssd16xx_pm_control,
+	      &ssd16xx_driver,
+	      NULL,
+	      POST_KERNEL,
+	      CONFIG_APPLICATION_INIT_PRIORITY,
+	      &ssd16xx_driver_api);
