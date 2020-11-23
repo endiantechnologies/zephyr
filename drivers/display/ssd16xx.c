@@ -364,8 +364,7 @@ static void ssd16xx_get_capabilities(const struct device *dev,
 	caps->current_pixel_format = PIXEL_FORMAT_MONO10;
 	caps->screen_info = SCREEN_INFO_MONO_VTILED |
 			    SCREEN_INFO_MONO_MSB_FIRST |
-			    SCREEN_INFO_EPD |
-			    SCREEN_INFO_DOUBLE_BUFFER;
+			    SCREEN_INFO_EPD;
 }
 
 static int ssd16xx_set_orientation(const struct device *dev,
@@ -387,8 +386,7 @@ static int ssd16xx_set_pixel_format(const struct device *dev,
 	return -ENOTSUP;
 }
 
-static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd,
-				   bool update)
+static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd)
 {
 	struct ssd16xx_data *driver = dev->data;
 	uint8_t clear_page[EPD_PANEL_WIDTH];
@@ -429,10 +427,6 @@ static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd,
 		}
 	}
 
-	if (update) {
-		return ssd16xx_update_display(dev);
-	}
-
 	return 0;
 }
 
@@ -446,7 +440,7 @@ static inline int ssd16xx_load_ws_from_otp(const struct device *dev)
 	 * Controller has an integrated temperature sensor or external
 	 * temperature sensor is connected to the controller.
 	 */
-	LOG_INF("Select and load WS from OTP");
+	LOG_DBG("Select and load WS from OTP");
 
 	tmp[0] = DT_INST_PROP(0, tssv);
 	if (ssd16xx_write_cmd(driver,
@@ -462,7 +456,7 @@ static inline int ssd16xx_load_ws_from_otp(const struct device *dev)
 #else
 	int16_t t = (SSD16XX_DEFAULT_TR_VALUE * SSD16XX_TR_SCALE_FACTOR);
 
-	LOG_INF("Load default WS (25 degrees Celsius) from OTP");
+	LOG_DBG("Load default WS (25 degrees Celsius) from OTP");
 
 	tmp[0] = SSD16XX_CTRL2_ENABLE_CLK;
 	if (ssd16xx_write_cmd(driver, SSD16XX_CMD_UPDATE_CTRL2,
@@ -622,26 +616,22 @@ static int ssd16xx_controller_init(const struct device *dev)
 		return -EIO;
 	}
 
-	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RAM, true);
+	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RAM);
 	if (err < 0) {
 		return err;
 	}
 
-	ssd16xx_busy_wait(driver);
-
-	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RED_RAM,
-					     false);
+	err = ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RED_RAM);
 	if (err < 0) {
 		return err;
 	}
 
-	ssd16xx_busy_wait(driver);
-
-	if (ssd16xx_load_ws_default(dev)) {
-		return -EIO;
+	err = ssd16xx_load_ws_default(dev);
+	if (err < 0) {
+		return err;
 	}
 
-	return ssd16xx_clear_cntlr_mem(dev, SSD16XX_CMD_WRITE_RAM, true);
+	return 0;
 }
 
 static int ssd16xx_init(const struct device *dev)
