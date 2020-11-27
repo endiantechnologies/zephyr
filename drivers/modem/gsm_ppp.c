@@ -68,6 +68,7 @@ static struct gsm_modem {
 	bool mux_enabled : 1;
 	bool mux_setup_done : 1;
 	bool setup_done : 1;
+	bool presetup_done  : 1;
 } gsm;
 
 NET_BUF_POOL_DEFINE(gsm_recv_pool, GSM_RECV_MAX_BUF, GSM_RECV_BUF_SIZE,
@@ -406,53 +407,60 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 					    GSM_CMD_AT_TIMEOUT);
 		k_sleep(K_SECONDS(1));
 	}
+
+	if (!gsm->presetup_done) {
 #if defined(CONFIG_MODEM_GSM_MNOPROF)
-	ret = gsm_setup_mnoprof(gsm);
-	if (ret < 0) {
-		(void)k_work_reschedule(&gsm->gsm_configure_work,
-					    K_SECONDS(1));
-		return;
-	}
-	ret = gsm_setup_psm(gsm);
-	if (ret < 0) {
-		(void)k_work_reschedule(&gsm->gsm_configure_work,
-					    K_SECONDS(1));
-		return;
-	}
+		ret = gsm_setup_mnoprof(gsm);
+		if (ret < 0) {
+			(void)k_work_reschedule(&gsm->gsm_configure_work,
+						    K_SECONDS(1));
+			return;
+		}
+		ret = gsm_setup_psm(gsm);
+		if (ret < 0) {
+			(void)k_work_reschedule(&gsm->gsm_configure_work,
+						    K_SECONDS(1));
+			return;
+		}
 #endif
 #if defined(CONFIG_MODEM_GSM_URAT)
-	ret = gsm_setup_urat(gsm);
-	if (ret < 0) {
-		(void)k_work_reschedule(&gsm->gsm_configure_work,
-					    K_SECONDS(1));
-		return;
-	}
+		ret = gsm_setup_urat(gsm);
+		if (ret < 0) {
+			(void)k_work_reschedule(&gsm->gsm_configure_work,
+						    K_SECONDS(1));
+			return;
+		}
 #endif
 #if defined(CONFIG_MODEM_GSM_CONFIGURE_UBANDMASK)
-	ret = gsm_setup_ubandmask(gsm);
-	if (ret < 0) {
-		(void)k_work_reschedule(&gsm->gsm_configure_work,
-					    K_SECONDS(1));
-		return;
-	}
+		ret = gsm_setup_ubandmask(gsm);
+		if (ret < 0) {
+			(void)k_work_reschedule(&gsm->gsm_configure_work,
+						    K_SECONDS(1));
+			return;
+		}
 #endif
 
-	(void)gsm_setup_mccmno(gsm);
+		(void)gsm_setup_mccmno(gsm);
 
-	ret = modem_cmd_handler_setup_cmds_nolock(&gsm->context.iface,
-						  &gsm->context.cmd_handler,
-						  setup_cmds,
-						  ARRAY_SIZE(setup_cmds),
-						  &gsm->sem_response,
-						  GSM_CMD_SETUP_TIMEOUT);
-	if (ret < 0) {
-		LOG_DBG("modem setup returned %d, %s",
-			ret, "retrying...");
-		(void)k_work_reschedule(&gsm->gsm_configure_work, K_SECONDS(1));
-		return;
+
+		ret = modem_cmd_handler_setup_cmds_nolock(&gsm->context.iface,
+							&gsm->context.cmd_handler,
+							setup_cmds,
+							ARRAY_SIZE(setup_cmds),
+							&gsm->sem_response,
+							GSM_CMD_SETUP_TIMEOUT);
+		if (ret < 0) {
+			LOG_DBG("modem setup returned %d, %s",
+				ret, "retrying...");
+			(void)k_work_reschedule(&gsm->gsm_configure_work, K_SECONDS(1));
+			return;
+		}
 	}
 
+	gsm->presetup_done = true;
+
 attaching:
+		
 	/* Poll the RSSI (and wait for network registration, a bit
 	 * redundantly, but this is a hack)
 	 */
@@ -491,12 +499,9 @@ attaching:
 		return;
 	}
 
-<<<<<<< HEAD
 	/* Attached, clear retry counter */
 	gsm->attach_retries = 0;
 
-=======
->>>>>>> 554e63f730 (drivers: modem: gsm: Various hacks for SARA U-blox modems)
 	LOG_DBG("modem setup returned %d, %s", ret, "enable PPP");
 
 	ret = modem_cmd_handler_setup_cmds_nolock(&gsm->context.iface,
