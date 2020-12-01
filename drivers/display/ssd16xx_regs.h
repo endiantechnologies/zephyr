@@ -72,8 +72,8 @@
 #define SSD16XX_SLEEP_MODE_PON			0x00
 
 /* Default values */
-#define SSD16XX_VAL_DUMMY_LINE			0x1a
-#define SSD16XX_VAL_GATE_LWIDTH			0x08
+#define SSD16XX_VAL_DUMMY_LINE			0x3a
+#define SSD16XX_VAL_GATE_LWIDTH			0x0a
 
 /* time constants in ms */
 #define SSD16XX_RESET_DELAY			1
