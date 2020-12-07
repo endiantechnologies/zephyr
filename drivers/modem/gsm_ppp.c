@@ -319,6 +319,8 @@ static int gsm_setup_mccmno(struct gsm_modem *gsm)
 					    GSM_CMD_AT_TIMEOUT);
 	} else {
 		/* register operator automatically */
+		return 0;	/* XXX: AT+COPS=0,0 slows down R412M */
+
 		ret = modem_cmd_send_nolock(&gsm->context.iface,
 					    &gsm->context.cmd_handler,
 					    NULL, 0, "AT+COPS=0,0",
