@@ -41,6 +41,11 @@ LOG_MODULE_REGISTER(ssd16xx);
 #define SSD16XX_RESET_PIN DT_INST_GPIO_PIN(0, reset_gpios)
 #define SSD16XX_RESET_CNTRL DT_INST_GPIO_LABEL(0, reset_gpios)
 #define SSD16XX_RESET_FLAGS DT_INST_GPIO_FLAGS(0, reset_gpios)
+#if DT_INST_NODE_HAS_PROP(0, power_gpios)
+#define SSD16XX_POWER_PIN DT_INST_GPIO_PIN(0, power_gpios)
+#define SSD16XX_POWER_FLAGS DT_INST_GPIO_FLAGS(0, power_gpios)
+#define SSD16XX_POWER_CNTRL DT_INST_GPIO_LABEL(0, power_gpios)
+#endif
 
 #define EPD_PANEL_WIDTH			DT_INST_PROP(0, width)
 #define EPD_PANEL_HEIGHT		DT_INST_PROP(0, height)
@@ -63,12 +68,18 @@ struct ssd16xx_data {
 	const struct device *dc;
 	const struct device *busy;
 	const struct device *spi_dev;
+#if defined(SSD16XX_POWER_CNTRL)
+	const struct device *power;
+#endif
 	struct spi_config spi_config;
 #if defined(SSD16XX_CS_CNTRL)
 	struct spi_cs_control cs_ctrl;
 #endif
 	uint8_t scan_mode;
 	uint8_t update_cmd;
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+	uint32_t pm_state;
+#endif
 };
 
 #if DT_INST_NODE_HAS_PROP(0, lut_initial)
@@ -698,8 +709,65 @@ static int ssd16xx_init(const struct device *dev)
 	driver->spi_config.cs = &driver->cs_ctrl;
 #endif
 
+#if defined(SSD16XX_POWER_CNTRL)
+	driver->power = device_get_binding(SSD16XX_POWER_CNTRL);
+	if (driver->power == NULL) {
+		LOG_ERR("Could not get GPIO port for SSD16XX power signal");
+		return -EIO;
+	}
+
+	gpio_pin_configure(driver->busy, SSD16XX_POWER_PIN,
+			   GPIO_OUTPUT_ACTIVE | SSD16XX_POWER_FLAGS);
+	k_sleep(K_MSEC(SSD16XX_POWER_DELAY));
+#endif
+
 	return ssd16xx_controller_init(dev);
 }
+
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+static int ssd16xx_pm_control(const struct device *dev, uint32_t ctrl_command,
+				 void *context, device_pm_cb cb, void *arg)
+{
+	int ret = 0;
+	struct ssd16xx_data *data = (struct ssd16xx_data *)dev->data;
+
+	switch (ctrl_command) {
+	case DEVICE_PM_SET_POWER_STATE:
+		if (*((uint32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
+#if defined(SSD16XX_POWER_CNTRL)
+			gpio_pin_set(data->power, SSD16XX_POWER_PIN, 1);
+			k_sleep(K_MSEC(SSD16XX_POWER_DELAY));
+#endif
+			ssd16xx_controller_init(dev);
+			data->pm_state = DEVICE_PM_ACTIVE_STATE;
+			ret = 0;
+		} else {
+			ssd16xx_busy_wait(data);
+			uint8_t tmp = SSD16XX_SLEEP_MODE_DSM;
+			ret = ssd16xx_write_cmd(data, SSD16XX_CMD_SLEEP_MODE, &tmp, 1);
+			if (ret < 0) {
+				LOG_ERR("Could not set deep sleep mode");
+			}
+			data->pm_state = DEVICE_PM_OFF_STATE;
+#if defined(SSD16XX_POWER_CNTRL)
+			gpio_pin_set(data->power, SSD16XX_POWER_PIN, 0);
+#endif
+		}
+		break;
+	case DEVICE_PM_GET_POWER_STATE:
+		*((uint32_t *)context) = data->pm_state;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	if (cb != NULL) {
+		cb(dev, ret, context, arg);
+	}
+	return ret;
+}
+
+#endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
 
 static struct ssd16xx_data ssd16xx_driver;
 
@@ -716,8 +784,12 @@ static struct display_driver_api ssd16xx_driver_api = {
 	.set_orientation = ssd16xx_set_orientation,
 };
 
-
-DEVICE_AND_API_INIT(ssd16xx, DT_INST_LABEL(0), ssd16xx_init,
-		    &ssd16xx_driver, NULL,
-		    POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY,
-		    &ssd16xx_driver_api);
+DEVICE_DEFINE(ssd16xx,
+	      DT_INST_LABEL(0),
+	      ssd16xx_init,
+	      ssd16xx_pm_control,
+	      &ssd16xx_driver,
+	      NULL,
+	      POST_KERNEL,
+	      CONFIG_APPLICATION_INIT_PRIORITY,
+	      &ssd16xx_driver_api);

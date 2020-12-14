@@ -78,5 +78,6 @@
 /* time constants in ms */
 #define SSD16XX_RESET_DELAY			1
 #define SSD16XX_BUSY_DELAY			1
+#define SSD16XX_POWER_DELAY			100
 
 #endif /* __SSD16XX_REGS_H__ */

@@ -58,6 +58,14 @@ properties:
       required: false
       description: Last column address is mapped to first segment
 
+    power-gpios:
+      type: phandle-array
+      required: false
+      description: Power enable pin.
+
+        This pin will be set to its active level to enable power to
+        the display.
+
     reset-gpios:
       type: phandle-array
       required: true
