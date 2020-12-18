@@ -751,7 +751,7 @@ static int ssd16xx_init(const struct device *dev)
 
 	gpio_pin_configure(driver->busy, SSD16XX_POWER_PIN,
 			   GPIO_OUTPUT_ACTIVE | SSD16XX_POWER_FLAGS);
-	k_sleep(K_MSEC(SSD16XX_POWER_DELAY));
+	k_sleep(K_MSEC(SSD16XX_POWER_ON_DELAY));
 #endif
 
 	return ssd16xx_controller_init(dev);
@@ -768,8 +768,14 @@ static int ssd16xx_pm_control(const struct device *dev, uint32_t ctrl_command,
 	case DEVICE_PM_SET_POWER_STATE:
 		if (*((uint32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
 #if defined(SSD16XX_POWER_CNTRL)
+#if defined(SSD16XX_CS_CNTRL)
+			gpio_pin_set(data->cs_ctrl.gpio_dev,
+				     data->cs_ctrl.gpio_pin,
+				     0);
+#endif
+			gpio_pin_set(data->reset, SSD16XX_RESET_PIN, 0);
 			gpio_pin_set(data->power, SSD16XX_POWER_PIN, 1);
-			k_sleep(K_MSEC(SSD16XX_POWER_DELAY));
+			k_sleep(K_MSEC(SSD16XX_POWER_ON_DELAY));
 #endif
 			ssd16xx_controller_init(dev);
 			data->pm_state = DEVICE_PM_ACTIVE_STATE;
@@ -783,7 +789,22 @@ static int ssd16xx_pm_control(const struct device *dev, uint32_t ctrl_command,
 			}
 			data->pm_state = DEVICE_PM_OFF_STATE;
 #if defined(SSD16XX_POWER_CNTRL)
+			/* Turn off the power switch. That should be
+			 * enough, but the display steals current from
+			 * RES#, D/C# and CS#. The BUSY pin is also
+			 * not completely accurate as to if the
+			 * display update is complete or not, so we
+			 * have a delay.
+			 */
+			k_sleep(K_MSEC(SSD16XX_POWER_OFF_DELAY));
 			gpio_pin_set(data->power, SSD16XX_POWER_PIN, 0);
+			gpio_pin_set_raw(data->reset, SSD16XX_RESET_PIN, 0);
+			gpio_pin_set_raw(data->dc, SSD16XX_DC_PIN, 0);
+#if defined(SSD16XX_CS_CNTRL)
+			gpio_pin_set_raw(data->cs_ctrl.gpio_dev,
+					 data->cs_ctrl.gpio_pin,
+					 0);
+#endif
 #endif
 		}
 		break;
