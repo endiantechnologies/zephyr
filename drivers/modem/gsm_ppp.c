@@ -805,6 +805,8 @@ void gsm_ppp_stop(const struct device *dev)
 	struct gsm_modem *gsm = dev->data;
 	struct net_if *iface = gsm->iface;
 
+	k_work_cancel_delayable(&gsm->gsm_configure_work);
+
 	net_if_l2(iface)->enable(iface, false);
 
 	if (IS_ENABLED(CONFIG_GSM_MUX)) {
