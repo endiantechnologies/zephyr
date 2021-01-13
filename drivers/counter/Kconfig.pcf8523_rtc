@@ -1,0 +1,18 @@
+# Copyright (c) 2021 Endian Technologies AB
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+config COUNTER_PCF8523_RTC
+	bool "NXP PCF8523 RTC driver"
+	select I2C
+	depends on MINIMAL_LIBC
+	help
+	  Enable the counter driver for PCF8523 RTC I2C devices.
+
+config COUNTER_PCF8523_INIT_PRIORITY
+	int "Init priority"
+	depends on COUNTER_PCF8523_RTC
+	default 65
+	help
+	  PCF8523 device driver initialization priority.
