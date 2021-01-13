@@ -1,0 +1,31 @@
+#
+# Copyright (c) 2021 Endian Technologies AB
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+description: NXP PCF8523 RTC binding
+
+compatible: "nxp,pcf8523"
+
+include: i2c-device.yaml
+
+properties:
+    reg:
+      required: true
+
+    pf:
+      type: int
+      required: false
+      description: |
+        Internal oscillator capacitance for quart crystals with a
+        corresponding load capacitance. Use 0 to select 7 pF or 1 to
+        select 12.5 pF. The hardware default is 7 pF.
+
+    pm:
+      type: int
+      required: false
+      description: |
+        Power management control, a value between 0 and 7 (inclusive).
+        This controls the battery-switchover and battery low
+        functions. See the data sheet. The hardware default is seven.
