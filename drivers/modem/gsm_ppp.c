@@ -106,6 +106,7 @@ MODEM_CMD_DEFINE(gsm_cmd_error)
 static struct modem_cmd response_cmds[] = {
 	MODEM_CMD("OK", gsm_cmd_ok, 0U, ""),
 	MODEM_CMD("ERROR", gsm_cmd_error, 0U, ""),
+	MODEM_CMD("+CME ERROR", gsm_cmd_error, 0U, ""),
 	MODEM_CMD("CONNECT", gsm_cmd_ok, 0U, ""),
 };
 
