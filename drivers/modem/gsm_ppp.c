@@ -121,6 +121,7 @@ static struct modem_cmd response_cmds[] = {
 #define MDM_UBANDMASKS           2
 
 struct modem_info {
+	int64_t mdm_setup_start;
 	char mdm_manufacturer[MDM_MANUFACTURER_LENGTH];
 	char mdm_model[MDM_MODEL_LENGTH];
 	char mdm_revision[MDM_REVISION_LENGTH];
@@ -720,6 +721,7 @@ static void gsm_configure(struct k_work *work)
 	int ret = -1;
 
 	LOG_DBG("Starting modem %p configuration", gsm);
+	minfo.mdm_setup_start = k_uptime_get();
 
 	ret = modem_cmd_send_nolock(&gsm->context.iface,
 				    &gsm->context.cmd_handler,

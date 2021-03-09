@@ -407,7 +407,7 @@ static int gsm_poll_network_status(struct gsm_modem *gsm)
 
        if (minfo.mdm_service == 1 &&
            gsm->context.data_rssi <= -106 &&
-           k_uptime_get() < 30*MSEC_PER_SEC) {
+           (k_uptime_get() - minfo.mdm_setup_start) < 30*MSEC_PER_SEC) {
                /* Not enough time to get a good RSSI; try again */
                LOG_WRN("Waiting for a good RSSI value");
                return -1;
