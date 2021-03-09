@@ -213,6 +213,23 @@ static int cmd_modem_info(const struct shell *shell, size_t argc, char *argv[])
 		      mdm_ctx->data_revision,
 		      mdm_ctx->data_imei,
 		      mdm_ctx->data_rssi);
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+	int abstz = abs(mdm_ctx->data_tz_minutes);
+
+	shell_fprintf(shell, SHELL_NORMAL,
+		      "Network time     : "
+		      "%04d-%02d-%02d %02d:%02d:%02dZ (local TZ is UTC%c%02d%02d)"
+		      " (%ld ms ago)\n",
+		      1900+mdm_ctx->data_time.tm_year,
+		      1+mdm_ctx->data_time.tm_mon,
+		      mdm_ctx->data_time.tm_mday,
+		      mdm_ctx->data_time.tm_hour,
+		      mdm_ctx->data_time.tm_min,
+		      mdm_ctx->data_time.tm_sec,
+		      mdm_ctx->data_tz_minutes >= 0 ? '+' : '-',
+		      abstz/60, abstz%60,
+		      k_uptime_get() - mdm_ctx->data_time_uptime);
+#endif
 
 	shell_fprintf(shell, SHELL_NORMAL,
 		      "GSM 07.10 muxing : %s\n",

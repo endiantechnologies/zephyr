@@ -19,6 +19,9 @@
 #include <net/net_ip.h>
 #include <sys/ring_buffer.h>
 #include <drivers/gpio.h>
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+#include <time.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,6 +70,11 @@ struct modem_context {
 	char *data_iccid;
 #endif
 	int   data_rssi;
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+	int data_tz_minutes;	/* local timezone */
+	int64_t data_time_uptime;
+	struct tm data_time;	/* time in UTC */
+#endif
 
 	/* pin config */
 	struct modem_pin *pins;

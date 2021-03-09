@@ -1,4 +1,4 @@
-/* © 2020 Endian Technologies AB
+/* © 2020, 2021 Endian Technologies AB
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -415,3 +415,177 @@ static int gsm_poll_network_status(struct gsm_modem *gsm)
 
        return minfo.mdm_service == 1 ? 0 : -1;
 }
+
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+/* Handler: +CTZU: <0/1/2> */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_ctzu)
+{
+	if (argc != 0) {
+		minfo.mdm_use_nitz = atoi(argv[0]);
+	}
+
+	LOG_INF("CTZU: %d", minfo.mdm_use_nitz);
+
+	return 0;
+}
+
+/* Configure the modem use use NITZ (network time & time zone). */
+static int gsm_setup_nitz(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD("AT+CTZU?", "+CTZU:", on_cmd_atcmdinfo_ctzu, 1U, ","),
+	};
+	struct setup_cmd set_cmds[] = {
+		SETUP_CMD_NOHANDLE("ATE0"),
+		SETUP_CMD_NOHANDLE("AT+CTZU=1"),
+		SETUP_CMD_NOHANDLE("AT+CFUN=15"),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying CTZU ret:%d", ret);
+		return ret;
+	}
+
+	if (minfo.mdm_use_nitz != 1) {
+		LOG_WRN("Enabling NITZ");
+		ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+						   &gsm->context.cmd_handler,
+						   set_cmds,
+						   ARRAY_SIZE(set_cmds),
+						   &gsm->sem_response,
+						   GSM_CMD_SETUP_TIMEOUT);
+		if (ret < 0) {
+			LOG_ERR("Setting CTZU ret:%d", ret);
+			return ret;
+		}
+
+		k_sleep(K_SECONDS(3));
+
+		return -EAGAIN;
+	}
+
+	return ret;
+}
+
+/* Handler: +CCLK: "yy/MM/dd,hh:mm:ss+TZ"
+ * TZ is expressed in multiples of 15 minutes.
+ */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_cclk)
+{
+	char buf[40];
+	size_t out_len;
+
+	out_len = net_buf_linearize(buf, sizeof(buf) - 1,
+				    data->rx_buf, 0, len);
+	buf[out_len] = '\0';
+	char *p;
+
+	/* Skip over '+CCLK: "' */
+	if ((p = strchr(buf, '"'))) {
+		p++;
+	} else {
+		p = buf;
+	}
+
+	/* Delim is set to the character that delimited the previous
+	 * field (e.g. in decoding "21/" it is set to '/').
+	 */
+	char delim = ' ';
+	for (int i = 0; *p; i++) {
+		char *endp = NULL;
+		int v = strtoul(p, &endp, 10);
+
+		if (p == endp) {
+			break;
+		}
+
+		switch (i) {
+		case 0:
+			minfo.mdm_nitz.tm_year = 100+v;
+			break;
+		case 1:
+			minfo.mdm_nitz.tm_mon = v-1;
+			break;
+		case 2:
+			minfo.mdm_nitz.tm_mday = v;
+			break;
+		case 3:
+			minfo.mdm_nitz.tm_hour = v;
+			break;
+		case 4:
+			minfo.mdm_nitz.tm_min = v;
+			break;
+		case 5:
+			minfo.mdm_nitz.tm_sec = v;
+			break;
+		case 6:
+			minfo.mdm_tzoffset = v * 15;
+			if (delim == '-') {
+				minfo.mdm_tzoffset = -minfo.mdm_tzoffset;
+			}
+			break;
+		}
+
+		delim = *endp;
+		p = endp+1;
+	}
+
+	minfo.mdm_nitz_uptime = k_uptime_get();
+
+	return 0;
+}
+
+/* Read the network time. */
+static int gsm_read_network_time(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD_NOHANDLE("AT+CTZU?"),
+		SETUP_CMD("AT+CCLK?", "", on_cmd_atcmdinfo_cclk, 0U, ""),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying CCLK: %d", ret);
+		return ret;
+	}
+
+	LOG_DBG("Network time: %04d-%02d-%02d %02d:%02d:%02d UTC%c%02d%02d",
+		1900+minfo.mdm_nitz.tm_year,
+		1+minfo.mdm_nitz.tm_mon,
+		minfo.mdm_nitz.tm_mday,
+		minfo.mdm_nitz.tm_hour,
+		minfo.mdm_nitz.tm_min,
+		minfo.mdm_nitz.tm_sec,
+		minfo.mdm_tzoffset >= 0 ? '+' : '-',
+		minfo.mdm_tzoffset/60,
+		minfo.mdm_tzoffset%60);
+
+	int year = 1900+minfo.mdm_nitz.tm_year;
+
+	if (year == 2080 || year < 2021) {
+		/* The time is obviously invalid. SARA R412M initially
+		 * reports 2080 until it gets the network time.
+		 */
+		return -1;
+	}
+
+	gsm->context.data_tz_minutes = minfo.mdm_tzoffset;
+	gsm->context.data_time = minfo.mdm_nitz;
+	gsm->context.data_time_uptime = minfo.mdm_nitz_uptime;
+
+	return 0;
+}
+#endif	/* CONFIG_MODEM_NETWORK_TIME */

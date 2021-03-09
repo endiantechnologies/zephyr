@@ -141,6 +141,12 @@ struct modem_info {
 #endif
 	int mdm_rssi;
 	int mdm_service;
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+	int mdm_use_nitz;   /* current status of NITZ use */
+	struct tm mdm_nitz; /* current time in UTC from modem */
+	int mdm_tzoffset;   /* time zone offset from UTC in minutes */
+	int64_t mdm_nitz_uptime; /* uptime when time was retreived */
+#endif
 };
 
 static struct modem_info minfo;
@@ -425,6 +431,9 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 		}
 #endif
 
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+		(void)gsm_setup_nitz(gsm);
+#endif
 		(void)gsm_setup_mccmno(gsm);
 
 		ret = modem_cmd_handler_setup_cmds_nolock(&gsm->context.iface,
@@ -468,6 +477,14 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 					    K_SECONDS(1));
 		return;
 	}
+
+#if defined(CONFIG_MODEM_NETWORK_TIME)
+	/* Read the network time. */
+	ret = gsm_read_network_time(gsm);
+	if (ret < 0) {
+		LOG_WRN("network time not ready");
+	}
+#endif
 
 	LOG_DBG("modem setup returned %d, %s", ret, "enable PPP");
 

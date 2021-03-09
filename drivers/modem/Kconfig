@@ -132,6 +132,11 @@ config MODEM_SIM_NUMBERS
 	  Query the SIM card for the IMSI and ICCID identifiers. This
 	  can be disabled if the application does not use a SIM.
 
+config MODEM_NETWORK_TIME
+       bool "Get the time from the network with NITZ"
+       help
+	  This enables reading the network time and time zone during
+	  the modem setup.
 
 source "drivers/modem/Kconfig.ublox-sara-r4"
 source "drivers/modem/Kconfig.wncm14a2a"
