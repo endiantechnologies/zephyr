@@ -1,0 +1,16 @@
+/*
+ * Copyright (c) 2021 Endian Technologies AB
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&i2c0 {
+	status = "okay";
+	pcf8523@68 {
+		compatible = "nxp,pcf8523";
+		reg = <0x68>;
+		label = "PCF8523";
+		pf = <0>;
+		pm = <7>;
+	};
+};

@@ -1,0 +1,6 @@
+sample:
+  name: NXP PCF8523 RTC
+tests:
+  sample.basic.nxp_pcf8523:
+    build_only: true
+    platform_allow: nrf52840dk_nrf52840

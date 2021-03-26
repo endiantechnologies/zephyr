@@ -1,0 +1,11 @@
+# Copyright (c) 2021 Endian Technologies AB
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+config APP_RESET_RTC
+	bool "Option to reset the pcf8523 to 0"
+	help
+	  If enabled this will reset the rtc to start at timestamp 0.
+
+source "Kconfig"
