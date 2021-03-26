@@ -69,3 +69,8 @@ config MODEM_GSM_UBANDMASK_NB1
          This is not meant to be upstreamed as-is!
 
 endif # MODEM_GSM_CONFIGURE_UBANDMASK
+
+config MODEM_OPERATOR_INFO
+       bool "Enable support fetching the operator information"
+       help
+         Choose this setting to fetch operator information.

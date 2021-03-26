@@ -309,7 +309,7 @@ static int gsm_setup_ubandmask(struct gsm_modem *gsm)
                                                   GSM_CMD_SETUP_TIMEOUT);
                k_sleep(K_SECONDS(3));
                if (ret < 0) {
-                       LOG_ERR("Setting URAT ret:%d", ret);
+                       LOG_ERR("Setting UBANDMASK ret:%d", ret);
                        return ret;
                }
 
@@ -589,3 +589,38 @@ static int gsm_read_network_time(struct gsm_modem *gsm)
 	return 0;
 }
 #endif	/* CONFIG_MODEM_NETWORK_TIME */
+
+#if defined(CONFIG_MODEM_OPERATOR_INFO)
+/* Handler: +COPS: <mode>[,<format>,<oper>[,<AcT>]] */
+MODEM_CMD_DEFINE(on_cmd_atcmdinfo_cops)
+{
+	if (argc >= 4) {
+		minfo.mdm_rat = atoi(argv[3]);
+	}
+
+	return 0;
+}
+
+static int gsm_read_operator_information(struct gsm_modem *gsm)
+{
+	int ret;
+	struct setup_cmd query_cmds[] = {
+		SETUP_CMD("AT+COPS?", "", on_cmd_atcmdinfo_cops, 4U, ","),
+	};
+
+	ret = modem_cmd_handler_setup_cmds(&gsm->context.iface,
+					   &gsm->context.cmd_handler,
+					   query_cmds,
+					   ARRAY_SIZE(query_cmds),
+					   &gsm->sem_response,
+					   GSM_CMD_SETUP_TIMEOUT);
+	if (ret < 0) {
+		LOG_ERR("Querying COPS: %d", ret);
+		return ret;
+	}
+
+	gsm->context.data_rat = minfo.mdm_rat;
+
+	return 0;
+}
+#endif

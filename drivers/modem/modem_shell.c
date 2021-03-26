@@ -230,6 +230,11 @@ static int cmd_modem_info(const struct shell *shell, size_t argc, char *argv[])
 		      abstz/60, abstz%60,
 		      k_uptime_get() - mdm_ctx->data_time_uptime);
 #endif
+#if defined(CONFIG_MODEM_OPERATOR_INFO)
+	shell_fprintf(shell, SHELL_NORMAL,
+		      "Radio Access Tech: %d\n",
+		      mdm_ctx->data_rat);
+#endif
 
 	shell_fprintf(shell, SHELL_NORMAL,
 		      "GSM 07.10 muxing : %s\n",

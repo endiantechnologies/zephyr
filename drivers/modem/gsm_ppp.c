@@ -148,6 +148,9 @@ struct modem_info {
 	int mdm_tzoffset;   /* time zone offset from UTC in minutes */
 	int64_t mdm_nitz_uptime; /* uptime when time was retreived */
 #endif
+#if defined(CONFIG_MODEM_OPERATOR_INFO)
+	int mdm_rat;
+#endif
 };
 
 static struct modem_info minfo;
@@ -464,6 +467,10 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 					    K_SECONDS(1));
 		return;
 	}
+
+#if defined(CONFIG_MODEM_OPERATOR_INFO)
+	(void) gsm_read_operator_information(gsm);
+#endif
 
 	/* Don't initialize PPP until we're attached to packet service */
 	ret = modem_cmd_send_nolock(&gsm->context.iface,

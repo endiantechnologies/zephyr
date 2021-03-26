@@ -75,6 +75,9 @@ struct modem_context {
 	int64_t data_time_uptime;
 	struct tm data_time;	/* time in UTC */
 #endif
+#if defined(CONFIG_MODEM_OPERATOR_INFO)
+	int data_rat;		/* radio access technology */
+#endif
 
 	/* pin config */
 	struct modem_pin *pins;
