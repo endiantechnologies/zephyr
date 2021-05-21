@@ -2104,7 +2104,10 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst,
 					&data_len);
 		}
 
-		if (!data_ptr || data_len == 0) {
+		if (!data_ptr ||
+		    (data_len == 0 &&
+		     obj_field->data_type != LWM2M_RES_TYPE_OPAQUE &&
+		     obj_field->data_type != LWM2M_RES_TYPE_STRING)) {
 			return -ENOENT;
 		}
 
@@ -2119,7 +2122,7 @@ static int lwm2m_read_handler(struct lwm2m_engine_obj_inst *obj_inst,
 		case LWM2M_RES_TYPE_STRING:
 			engine_put_string(&msg->out, &msg->path,
 					  (uint8_t *)data_ptr,
-					  strlen((uint8_t *)data_ptr));
+					  data_len == 0 ? 0: strlen((uint8_t *)data_ptr));
 			break;
 
 		case LWM2M_RES_TYPE_U64:
